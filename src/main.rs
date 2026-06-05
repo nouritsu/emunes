@@ -1,3 +1,6 @@
+use emunes::cpu::Cpu;
+
 fn main() {
-    println!("Hello, world!");
+    let cpu = Cpu::new();
+    println!("{:#?}", cpu);
 }
