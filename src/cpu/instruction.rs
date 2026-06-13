@@ -25,19 +25,28 @@ pub enum AddressingMode {
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mnemonic {
-    ADC, AND, ASL, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS,
-    CLC, CLD, CLI, CLV, CMP, CPX, CPY,
-    DEC, DEX, DEY,
-    EOR,
-    INC, INX, INY,
-    JMP, JSR,
-    LDA, LDX, LDY, LSR,
-    NOP,
-    ORA,
+    // Load / Store
+    LDA, LDX, LDY, STA, STX, STY,
+    // Register Transfers
+    TAX, TAY, TXA, TYA, TSX, TXS,
+    // Stack
     PHA, PHP, PLA, PLP,
-    ROL, ROR, RTI, RTS,
-    SBC, SEC, SED, SEI, STA, STX, STY,
-    TAX, TAY, TSX, TXA, TXS, TYA,
+    // Logical
+    AND, EOR, ORA, BIT,
+    // Arithmetic
+    ADC, SBC, CMP, CPX, CPY,
+    // Increments / Decrements
+    INC, INX, INY, DEC, DEX, DEY,
+    // Shifts
+    ASL, LSR, ROL, ROR,
+    // Jumps / Calls
+    JMP, JSR, RTS,
+    // Branches
+    BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS,
+    // Status Flag Changes
+    CLC, CLD, CLI, CLV, SEC, SED, SEI,
+    // System
+    BRK, NOP, RTI,
 }
 
 #[derive(Clone, Copy, Debug)]

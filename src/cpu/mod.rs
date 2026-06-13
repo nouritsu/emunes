@@ -1,7 +1,10 @@
 mod instruction;
 mod status;
 
-use crate::cpu::instruction::{AddressingMode, Mnemonic, OPCODES, Operand};
+#[cfg(test)]
+mod tests;
+
+use instruction::{AddressingMode, Mnemonic, OPCODES, Operand};
 use status::Status;
 
 #[derive(Debug)]
@@ -12,6 +15,11 @@ pub struct Cpu {
     pub status: Status,
     pub program_counter: u16,
     memory: [u8; 0x10000],
+}
+
+enum Flow {
+    Halt,
+    Continue,
 }
 
 impl Cpu {
@@ -81,7 +89,10 @@ impl Cpu {
             self.program_counter += 1;
 
             let operand = self.resolve(opcode.mode);
-            self.apply(opcode.mnemonic, operand);
+            match self.apply(opcode.mnemonic, operand) {
+                Flow::Halt => return,
+                Flow::Continue => continue,
+            }
         }
     }
 
@@ -143,5 +154,123 @@ impl Cpu {
         }
     }
 
-    fn apply(&mut self, mnemonic: Mnemonic, operand: Operand) {}
+    fn apply(&mut self, mnemonic: Mnemonic, operand: Operand) -> Flow {
+        match mnemonic {
+            // Load / Store
+            Mnemonic::LDA => {
+                let byte = self.op_read(operand);
+                self.register_a = byte;
+                self.update_zn(byte);
+            }
+            Mnemonic::LDX => {
+                let byte = self.op_read(operand);
+                self.register_x = byte;
+                self.update_zn(byte);
+            }
+            Mnemonic::LDY => {
+                let byte = self.op_read(operand);
+                self.register_y = byte;
+                self.update_zn(byte);
+            }
+
+            Mnemonic::STA => self.op_write(operand, self.register_a),
+            Mnemonic::STX => self.op_write(operand, self.register_x),
+            Mnemonic::STY => self.op_write(operand, self.register_y),
+
+            // Register Transfers
+            Mnemonic::TAX => todo!(),
+            Mnemonic::TAY => todo!(),
+            Mnemonic::TXA => todo!(),
+            Mnemonic::TYA => todo!(),
+            Mnemonic::TSX => todo!(),
+            Mnemonic::TXS => todo!(),
+
+            // Stack
+            Mnemonic::PHA => todo!(),
+            Mnemonic::PHP => todo!(),
+            Mnemonic::PLA => todo!(),
+            Mnemonic::PLP => todo!(),
+
+            // Logical
+            Mnemonic::AND => todo!(),
+            Mnemonic::EOR => todo!(),
+            Mnemonic::ORA => todo!(),
+            Mnemonic::BIT => todo!(),
+
+            // Arithmetic
+            Mnemonic::ADC => todo!(),
+            Mnemonic::SBC => todo!(),
+            Mnemonic::CMP => todo!(),
+            Mnemonic::CPX => todo!(),
+            Mnemonic::CPY => todo!(),
+
+            // Increments / Decrements
+            Mnemonic::INC => todo!(),
+            Mnemonic::INX => todo!(),
+            Mnemonic::INY => todo!(),
+            Mnemonic::DEC => todo!(),
+            Mnemonic::DEX => todo!(),
+            Mnemonic::DEY => todo!(),
+
+            // Shifts
+            Mnemonic::ASL => todo!(),
+            Mnemonic::LSR => todo!(),
+            Mnemonic::ROL => todo!(),
+            Mnemonic::ROR => todo!(),
+
+            // Jumps / Calls
+            Mnemonic::JMP => todo!(),
+            Mnemonic::JSR => todo!(),
+            Mnemonic::RTS => todo!(),
+
+            // Branches
+            Mnemonic::BCC => todo!(),
+            Mnemonic::BCS => todo!(),
+            Mnemonic::BEQ => todo!(),
+            Mnemonic::BMI => todo!(),
+            Mnemonic::BNE => todo!(),
+            Mnemonic::BPL => todo!(),
+            Mnemonic::BVC => todo!(),
+            Mnemonic::BVS => todo!(),
+
+            // Status Flag Changes
+            Mnemonic::CLC => todo!(),
+            Mnemonic::CLD => todo!(),
+            Mnemonic::CLI => todo!(),
+            Mnemonic::CLV => todo!(),
+            Mnemonic::SEC => todo!(),
+            Mnemonic::SED => todo!(),
+            Mnemonic::SEI => todo!(),
+
+            // System
+            Mnemonic::BRK => return Flow::Halt,
+            Mnemonic::NOP => todo!(),
+            Mnemonic::RTI => todo!(),
+        }
+
+        Flow::Continue
+    }
+
+    // Operand Helpers
+    fn op_read(&self, operand: Operand) -> u8 {
+        match operand {
+            Operand::Implied => panic!("instruction has no operand to read"),
+            Operand::Accumulator => self.register_a,
+            Operand::Address(addr) => self.mem_read(addr),
+        }
+    }
+
+    fn op_write(&mut self, operand: Operand, data: u8) {
+        match operand {
+            Operand::Implied => panic!("instruction has no operand to write"),
+            Operand::Accumulator => self.register_a = data,
+            Operand::Address(addr) => self.mem_write(addr, data),
+        }
+    }
+
+    // Flag Helpers
+    fn update_zn(&mut self, value: u8) {
+        self.status.zero = value == 0;
+        self.status.negative = value & 0b1000_0000 != 0;
+    }
 }
