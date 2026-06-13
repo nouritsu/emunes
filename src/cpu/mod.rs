@@ -74,7 +74,6 @@ impl Cpu {
     }
 
     // Memory Helpers
-
     pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
     }
@@ -234,10 +233,24 @@ impl Cpu {
             Mnemonic::PLP => self.status = Status::from_byte(self.stack_pull()),
 
             // Logical
-            Mnemonic::AND => todo!(),
-            Mnemonic::EOR => todo!(),
-            Mnemonic::ORA => todo!(),
-            Mnemonic::BIT => todo!(),
+            Mnemonic::AND => {
+                self.register_a &= self.op_read(operand);
+                self.update_zn(self.register_a);
+            }
+            Mnemonic::EOR => {
+                self.register_a ^= self.op_read(operand);
+                self.update_zn(self.register_a);
+            }
+            Mnemonic::ORA => {
+                self.register_a |= self.op_read(operand);
+                self.update_zn(self.register_a);
+            }
+            Mnemonic::BIT => {
+                let byte = self.op_read(operand);
+                self.status.zero = (self.register_a & byte) == 0;
+                self.status.overflow = byte & 0b0100_0000 != 0;
+                self.status.negative = byte & 0b1000_0000 != 0;
+            }
 
             // Arithmetic
             Mnemonic::ADC => todo!(),

@@ -940,3 +940,291 @@ mod plp {
         assert!(!cpu.status.negative);
     }
 }
+
+mod and {
+    use super::*;
+
+    #[test]
+    fn immediate() {
+        // 0b1100 & 0b1010 = 0b1000
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0b1100,
+            op(AND, Immediate),
+            0b1010,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0b1000);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        // disjoint bits AND to zero
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x0F,
+            op(AND, Immediate),
+            0xF0,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(AND, Immediate),
+            0x80,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0xFF,
+                op(AND, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x0F)],
+        );
+        assert_eq!(cpu.register_a, 0x0F);
+    }
+}
+
+mod eor {
+    use super::*;
+
+    #[test]
+    fn immediate() {
+        // 0b1100 ^ 0b1010 = 0b0110
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0b1100,
+            op(EOR, Immediate),
+            0b1010,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0b0110);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        // a value XORed with itself is zero
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(EOR, Immediate),
+            0x42,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        // 0x00 ^ 0x80 = 0x80
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x00,
+            op(EOR, Immediate),
+            0x80,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0xFF,
+                op(EOR, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x0F)],
+        );
+        assert_eq!(cpu.register_a, 0xF0);
+    }
+}
+
+mod ora {
+    use super::*;
+
+    #[test]
+    fn immediate() {
+        // 0b1100 | 0b1010 = 0b1110
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0b1100,
+            op(ORA, Immediate),
+            0b1010,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0b1110);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        // only 0 | 0 is zero
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x00,
+            op(ORA, Immediate),
+            0x00,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x01,
+            op(ORA, Immediate),
+            0x80,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x81);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x0F,
+                op(ORA, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0xF0)],
+        );
+        assert_eq!(cpu.register_a, 0xFF);
+    }
+}
+
+mod bit {
+    use super::*;
+
+    #[test]
+    fn sets_zero_when_no_common_bits() {
+        // A & value == 0 -> zero set, but A is unchanged.
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x0F,
+                op(BIT, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0xF0)],
+        );
+        assert_eq!(cpu.register_a, 0x0F); // A is read-only
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn clears_zero_when_common_bits() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0xFF,
+                op(BIT, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x01)],
+        );
+        assert!(!cpu.status.zero);
+    }
+
+    #[test]
+    fn negative_comes_from_operand_not_and() {
+        // A = 0, so A & value == 0, yet bit 7 of the value still sets negative.
+        // This proves N reflects the operand, not the masked result.
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x00,
+                op(BIT, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x80)],
+        );
+        assert!(cpu.status.zero); // 0 & 0x80 == 0
+        assert!(cpu.status.negative); // bit 7 of the operand
+    }
+
+    #[test]
+    fn overflow_comes_from_operand_bit6() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x00,
+                op(BIT, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x40)],
+        );
+        assert!(cpu.status.overflow);
+    }
+
+    #[test]
+    fn clears_negative_and_overflow() {
+        // operand with bits 6 and 7 clear leaves both flags clear
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0xFF,
+                op(BIT, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x3F)],
+        );
+        assert!(!cpu.status.negative);
+        assert!(!cpu.status.overflow);
+    }
+
+    #[test]
+    fn absolute() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0xC0,
+                op(BIT, Absolute),
+                0x34,
+                0x12,
+                op(BRK, Implied),
+            ],
+            &[(0x1234, 0xC0)],
+        );
+        assert!(!cpu.status.zero); // 0xC0 & 0xC0 != 0
+        assert!(cpu.status.negative); // bit 7
+        assert!(cpu.status.overflow); // bit 6
+    }
+}
