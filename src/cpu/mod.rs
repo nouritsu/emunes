@@ -12,6 +12,7 @@ pub struct Cpu {
     pub register_a: u8,
     pub register_x: u8,
     pub register_y: u8,
+    pub stack_pointer: u8,
     pub status: Status,
     pub program_counter: u16,
     memory: [u8; 0x10000],
@@ -28,11 +29,51 @@ impl Cpu {
             register_a: 0,
             register_x: 0,
             register_y: 0,
+            stack_pointer: 0,
             status: Status::default(),
             program_counter: 0,
             memory: [0; 0x10000],
         }
     }
+
+    pub fn reset(&mut self) {
+        self.register_a = 0;
+        self.register_x = 0;
+        self.register_y = 0;
+        self.stack_pointer = 0xFD;
+        self.status = Status::default();
+        self.program_counter = self.mem_read_u16(0xFFFC); // from reset vector
+    }
+
+    pub fn load_and_run(&mut self, program: Vec<u8>) {
+        self.load(program);
+        self.reset();
+        self.run();
+    }
+
+    pub fn load(&mut self, program: Vec<u8>) {
+        let start = 0x8000;
+        let end = 0x8000 + program.len();
+
+        self.memory[start..end].copy_from_slice(&program);
+        self.mem_write_u16(0xFFFC, 0x8000); // reset vector -> program start
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            let byte = self.mem_read(self.program_counter);
+            let opcode = OPCODES[byte as usize].expect("unknown instruction");
+            self.program_counter += 1;
+
+            let operand = self.resolve(opcode.mode);
+            match self.apply(opcode.mnemonic, operand) {
+                Flow::Halt => return,
+                Flow::Continue => continue,
+            }
+        }
+    }
+
+    // Memory Helpers
 
     pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
@@ -69,33 +110,7 @@ impl Cpu {
         word
     }
 
-    pub fn load_and_run(&mut self, program: Vec<u8>) {
-        self.load(program);
-        self.run();
-    }
-
-    pub fn load(&mut self, program: Vec<u8>) {
-        let start = 0x8000;
-        let end = 0x8000 + program.len();
-
-        self.memory[start..end].copy_from_slice(&program);
-        self.program_counter = 0x8000;
-    }
-
-    pub fn run(&mut self) {
-        loop {
-            let byte = self.mem_read(self.program_counter);
-            let opcode = OPCODES[byte as usize].expect("unknown instruction");
-            self.program_counter += 1;
-
-            let operand = self.resolve(opcode.mode);
-            match self.apply(opcode.mnemonic, operand) {
-                Flow::Halt => return,
-                Flow::Continue => continue,
-            }
-        }
-    }
-
+    // Instruction Helpers
     fn resolve(&mut self, mode: AddressingMode) -> Operand {
         use AddressingMode as Mode;
         match mode {
@@ -178,12 +193,27 @@ impl Cpu {
             Mnemonic::STY => self.op_write(operand, self.register_y),
 
             // Register Transfers
-            Mnemonic::TAX => todo!(),
-            Mnemonic::TAY => todo!(),
-            Mnemonic::TXA => todo!(),
-            Mnemonic::TYA => todo!(),
-            Mnemonic::TSX => todo!(),
-            Mnemonic::TXS => todo!(),
+            Mnemonic::TAX => {
+                self.register_x = self.register_a;
+                self.update_zn(self.register_x);
+            }
+            Mnemonic::TAY => {
+                self.register_y = self.register_a;
+                self.update_zn(self.register_y);
+            }
+            Mnemonic::TXA => {
+                self.register_a = self.register_x;
+                self.update_zn(self.register_a);
+            }
+            Mnemonic::TYA => {
+                self.register_a = self.register_y;
+                self.update_zn(self.register_a);
+            }
+            Mnemonic::TSX => {
+                self.register_x = self.stack_pointer;
+                self.update_zn(self.register_x);
+            }
+            Mnemonic::TXS => self.stack_pointer = self.register_x,
 
             // Stack
             Mnemonic::PHA => todo!(),

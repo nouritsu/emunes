@@ -19,6 +19,7 @@ fn run(program: Vec<u8>) -> Cpu {
 fn run_seeded(program: Vec<u8>, seed: &[(u16, u8)]) -> Cpu {
     let mut cpu = Cpu::new();
     cpu.load(program);
+    cpu.reset(); // sets PC from the reset vector that load() wrote
     for &(addr, value) in seed {
         cpu.mem_write(addr, value);
     }
@@ -506,5 +507,264 @@ mod sty {
             op(BRK, Implied),
         ]);
         assert_eq!(cpu.mem_read(0x1234), 0x42);
+    }
+}
+
+mod tax {
+    use super::*;
+
+    #[test]
+    fn transfers_a_to_x() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(TAX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x42);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        // A = 0; clobber X (and clear the zero flag) before TAX, so the test
+        // proves TAX itself sets zero, not the preceding LDA.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x00,
+            op(LDX, Immediate),
+            0x01,
+            op(TAX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(LDX, Immediate),
+            0x01,
+            op(TAX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod tay {
+    use super::*;
+
+    #[test]
+    fn transfers_a_to_y() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(TAY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x42);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x00,
+            op(LDY, Immediate),
+            0x01,
+            op(TAY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(LDY, Immediate),
+            0x01,
+            op(TAY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod txa {
+    use super::*;
+
+    #[test]
+    fn transfers_x_to_a() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x42,
+            op(TXA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x42);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x00,
+            op(LDA, Immediate),
+            0x01,
+            op(TXA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x80,
+            op(LDA, Immediate),
+            0x01,
+            op(TXA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod tya {
+    use super::*;
+
+    #[test]
+    fn transfers_y_to_a() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x42,
+            op(TYA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x42);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x00,
+            op(LDA, Immediate),
+            0x01,
+            op(TYA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x80,
+            op(LDA, Immediate),
+            0x01,
+            op(TYA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod tsx {
+    use super::*;
+
+    // TSX reads the stack pointer, which can only be set via TXS, so each test
+    // seeds S with `LDX; TXS` first. This keeps them independent of whatever
+    // the power-on stack pointer value is.
+
+    #[test]
+    fn transfers_stack_pointer_to_x() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x42,
+            op(TXS, Implied), // S = 0x42
+            op(LDX, Immediate),
+            0x00,             // clobber X
+            op(TSX, Implied), // X = S = 0x42
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x42);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x00,
+            op(TXS, Implied), // S = 0
+            op(LDX, Immediate),
+            0x01,             // clear zero flag
+            op(TSX, Implied), // X = 0
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x80,
+            op(TXS, Implied), // S = 0x80
+            op(LDX, Immediate),
+            0x01,             // clear negative flag
+            op(TSX, Implied), // X = 0x80
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod txs {
+    use super::*;
+
+    #[test]
+    fn transfers_x_to_stack_pointer() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x42,
+            op(TXS, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.stack_pointer, 0x42);
+    }
+
+    #[test]
+    fn does_not_affect_flags() {
+        // X = 0x80 (which would set negative if TXS wrongly touched flags), then
+        // clear the flags with LDA #$01 before TXS. Flags must reflect the LDA,
+        // not the transfer.
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x80,
+            op(LDA, Immediate),
+            0x01,
+            op(TXS, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.stack_pointer, 0x80);
+        assert!(!cpu.status.negative);
+        assert!(!cpu.status.zero);
     }
 }
