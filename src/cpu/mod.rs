@@ -110,6 +110,15 @@ impl Cpu {
         word
     }
 
+    fn stack_push(&mut self, data: u8) {
+        self.mem_write(0x0100 + self.stack_pointer as u16, data);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+    }
+    fn stack_pull(&mut self) -> u8 {
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        self.mem_read(0x0100 + self.stack_pointer as u16)
+    }
+
     // Instruction Helpers
     fn resolve(&mut self, mode: AddressingMode) -> Operand {
         use AddressingMode as Mode;
@@ -216,10 +225,13 @@ impl Cpu {
             Mnemonic::TXS => self.stack_pointer = self.register_x,
 
             // Stack
-            Mnemonic::PHA => todo!(),
-            Mnemonic::PHP => todo!(),
-            Mnemonic::PLA => todo!(),
-            Mnemonic::PLP => todo!(),
+            Mnemonic::PHA => self.stack_push(self.register_a),
+            Mnemonic::PHP => self.stack_push(self.status.to_byte(true)),
+            Mnemonic::PLA => {
+                self.register_a = self.stack_pull();
+                self.update_zn(self.register_a);
+            }
+            Mnemonic::PLP => self.status = Status::from_byte(self.stack_pull()),
 
             // Logical
             Mnemonic::AND => todo!(),

@@ -768,3 +768,175 @@ mod txs {
         assert!(!cpu.status.zero);
     }
 }
+
+mod pha {
+    use super::*;
+
+    #[test]
+    fn pushes_accumulator_to_stack() {
+        // S starts at 0xFD after reset, so the push lands at 0x01FD.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(PHA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.mem_read(0x01FD), 0x42);
+    }
+
+    #[test]
+    fn decrements_stack_pointer() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(PHA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.stack_pointer, 0xFC);
+    }
+}
+
+mod pla {
+    use super::*;
+
+    #[test]
+    fn pulls_into_accumulator() {
+        // Push 0x42, clobber A, then pull it back.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(PHA, Implied),
+            op(LDA, Immediate),
+            0x00,
+            op(PLA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x42);
+    }
+
+    #[test]
+    fn increments_stack_pointer() {
+        // push then pull returns S to its starting value.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(PHA, Implied),
+            op(PLA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.stack_pointer, 0xFD);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x00,
+            op(PHA, Implied),
+            op(LDA, Immediate),
+            0x01, // clear zero flag before the pull
+            op(PLA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(PHA, Implied),
+            op(LDA, Immediate),
+            0x01, // clear negative flag before the pull
+            op(PLA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod php {
+    use super::*;
+
+    #[test]
+    fn pushes_status_with_break_and_bit5_set() {
+        // Fresh status is all-clear; PHP must still push bit 4 (B) and bit 5 set,
+        // i.e. 0x30. Read the pushed byte back with PLA.
+        let cpu = run(vec![op(PHP, Implied), op(PLA, Implied), op(BRK, Implied)]);
+        assert_eq!(cpu.register_a, 0x30);
+    }
+
+    #[test]
+    fn reflects_current_flags() {
+        // LDA #$80 sets the negative flag (bit 7). Pushed byte = 0x80|0x30 = 0xB0.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(PHP, Implied),
+            op(PLA, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0xB0);
+    }
+}
+
+mod plp {
+    use super::*;
+
+    #[test]
+    fn restores_all_flags() {
+        // Push 0xFF, then PLP should set every real flag.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0xFF,
+            op(PHA, Implied),
+            op(PLP, Implied),
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+        assert!(cpu.status.interrupt);
+        assert!(cpu.status.decimal);
+        assert!(cpu.status.overflow);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn clears_all_flags() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x00,
+            op(PHA, Implied),
+            op(PLP, Implied),
+            op(BRK, Implied),
+        ]);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.interrupt);
+        assert!(!cpu.status.decimal);
+        assert!(!cpu.status.overflow);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn ignores_break_and_bit5() {
+        // 0x30 has only bits 4 and 5 set, which are not real flags. PLP must
+        // discard them, leaving every flag clear.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x30,
+            op(PHA, Implied),
+            op(PLP, Implied),
+            op(BRK, Implied),
+        ]);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.interrupt);
+        assert!(!cpu.status.decimal);
+        assert!(!cpu.status.overflow);
+        assert!(!cpu.status.negative);
+    }
+}
