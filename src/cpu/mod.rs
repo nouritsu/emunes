@@ -309,13 +309,13 @@ impl Cpu {
             Mnemonic::BVS => todo!(),
 
             // Status Flag Changes
-            Mnemonic::CLC => todo!(),
-            Mnemonic::CLD => todo!(),
-            Mnemonic::CLI => todo!(),
-            Mnemonic::CLV => todo!(),
-            Mnemonic::SEC => todo!(),
-            Mnemonic::SED => todo!(),
-            Mnemonic::SEI => todo!(),
+            Mnemonic::CLC => self.status.carry = false,
+            Mnemonic::CLD => self.status.decimal = false,
+            Mnemonic::CLI => self.status.interrupt = false,
+            Mnemonic::CLV => self.status.overflow = false,
+            Mnemonic::SEC => self.status.carry = true,
+            Mnemonic::SED => self.status.decimal = true,
+            Mnemonic::SEI => self.status.interrupt = true,
 
             // System
             Mnemonic::BRK => return Flow::Halt,

@@ -1487,3 +1487,84 @@ mod dey {
         assert!(cpu.status.negative);
     }
 }
+
+mod sec {
+    use super::*;
+
+    #[test]
+    fn sets_carry() {
+        // status starts all-clear, so SEC alone proves the flag is set.
+        let cpu = run(vec![op(SEC, Implied), op(BRK, Implied)]);
+        assert!(cpu.status.carry);
+    }
+}
+
+mod sed {
+    use super::*;
+
+    #[test]
+    fn sets_decimal() {
+        let cpu = run(vec![op(SED, Implied), op(BRK, Implied)]);
+        assert!(cpu.status.decimal);
+    }
+}
+
+mod sei {
+    use super::*;
+
+    #[test]
+    fn sets_interrupt() {
+        let cpu = run(vec![op(SEI, Implied), op(BRK, Implied)]);
+        assert!(cpu.status.interrupt);
+    }
+}
+
+mod clc {
+    use super::*;
+
+    #[test]
+    fn clears_carry() {
+        // SEC first, so the test proves CLC did the clearing.
+        let cpu = run(vec![op(SEC, Implied), op(CLC, Implied), op(BRK, Implied)]);
+        assert!(!cpu.status.carry);
+    }
+}
+
+mod cld {
+    use super::*;
+
+    #[test]
+    fn clears_decimal() {
+        let cpu = run(vec![op(SED, Implied), op(CLD, Implied), op(BRK, Implied)]);
+        assert!(!cpu.status.decimal);
+    }
+}
+
+mod cli {
+    use super::*;
+
+    #[test]
+    fn clears_interrupt() {
+        let cpu = run(vec![op(SEI, Implied), op(CLI, Implied), op(BRK, Implied)]);
+        assert!(!cpu.status.interrupt);
+    }
+}
+
+mod clv {
+    use super::*;
+
+    #[test]
+    fn clears_overflow() {
+        // There is no set-overflow instruction, so seed V via PLP (pull 0xFF into
+        // status) before CLV clears it.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0xFF,
+            op(PHA, Implied),
+            op(PLP, Implied), // V (and every other flag) now set
+            op(CLV, Implied),
+            op(BRK, Implied),
+        ]);
+        assert!(!cpu.status.overflow);
+    }
+}
