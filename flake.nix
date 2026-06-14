@@ -1,5 +1,5 @@
 {
-  description = "emunes — NES emulator in Rust";
+  description = "emunes: a NES emulator written in Rust";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -8,6 +8,7 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    crane.url = "github:ipetkov/crane";
     git-hooks = {
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -19,6 +20,7 @@
     nixpkgs,
     flake-utils,
     rust-overlay,
+    crane,
     git-hooks,
   }:
     flake-utils.lib.eachDefaultSystem (system: let
@@ -31,31 +33,49 @@
         extensions = ["rust-src" "rust-analyzer"];
       };
 
+      craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+
+      src = craneLib.cleanCargoSource ./.;
+      commonArgs = {
+        inherit src;
+        strictDeps = true;
+      };
+      cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+      emunes = craneLib.buildPackage (commonArgs
+        // {
+          inherit cargoArtifacts;
+        });
+
       pre-commit-check = git-hooks.lib.${system}.run {
         src = ./.;
-        hooks = {
-          cargo-fmt = {
-            enable = true;
-            name = "cargo fmt --check";
-            entry = "${rustToolchain}/bin/cargo fmt --all -- --check";
-            files = "\\.rs$";
-            pass_filenames = false;
-          };
-          cargo-test = {
-            enable = true;
-            name = "cargo test";
-            entry = "${rustToolchain}/bin/cargo test";
-            files = "\\.rs$";
-            pass_filenames = false;
+        hooks.rustfmt = {
+          enable = true;
+          packageOverrides = {
+            cargo = rustToolchain;
+            rustfmt = rustToolchain;
           };
         };
       };
     in {
-      checks.pre-commit-check = pre-commit-check;
+      checks = {
+        inherit emunes;
 
-      devShells.default = pkgs.mkShell {
+        emunes-test = craneLib.cargoTest (commonArgs
+          // {
+            inherit cargoArtifacts;
+          });
+
+        emunes-fmt = craneLib.cargoFmt {inherit src;};
+
+        inherit pre-commit-check;
+      };
+
+      packages.default = emunes;
+
+      devShells.default = craneLib.devShell {
         inherit (pre-commit-check) shellHook;
-        buildInputs = pre-commit-check.enabledPackages;
+        inputsFrom = [emunes];
         packages = [rustToolchain];
       };
     });
