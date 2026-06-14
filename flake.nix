@@ -1,5 +1,5 @@
 {
-  description = "emunes: a NES emulator written in Rust";
+  description = "emunes: an NES emulator written in Rust";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
