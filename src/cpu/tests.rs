@@ -1568,3 +1568,113 @@ mod clv {
         assert!(!cpu.status.overflow);
     }
 }
+
+mod nop {
+    use super::*;
+
+    #[test]
+    fn does_not_alter_state() {
+        // NOP between LDA and BRK must leave A and the flags untouched.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(NOP, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn advances_one_byte() {
+        // If NOP consumed the wrong number of bytes, the following LDA would
+        // decode against the wrong operand. Reaching A = 0x42 proves it's a
+        // single-byte no-op.
+        let cpu = run(vec![
+            op(NOP, Implied),
+            op(LDA, Immediate),
+            0x42,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x42);
+    }
+}
+
+mod brk {
+    use super::*;
+
+    #[test]
+    fn halts_execution() {
+        // The LDA #$FF after BRK must never run, so A keeps the earlier 0x42.
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x42,
+            op(BRK, Implied),
+            op(LDA, Immediate),
+            0xFF,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x42);
+    }
+}
+
+mod rti {
+    use super::*;
+
+    // RTI pulls status, then the return address (lo, hi). The stack is seeded by
+    // pushing in the reverse of the pull order: hi, lo, then the status byte.
+
+    #[test]
+    fn returns_to_pulled_address() {
+        // Push return address 0x9000, then a status byte, then RTI. Control should
+        // resume at 0x9000, where a seeded `LDX #$99; BRK` proves we arrived.
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x90, // hi byte of return address
+                op(PHA, Implied),
+                op(LDA, Immediate),
+                0x00, // lo byte of return address
+                op(PHA, Implied),
+                op(LDA, Immediate),
+                0x00, // status byte (all flags clear)
+                op(PHA, Implied),
+                op(RTI, Implied),
+            ],
+            &[
+                (0x9000, op(LDX, Immediate)),
+                (0x9001, 0x99),
+                (0x9002, op(BRK, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_x, 0x99);
+    }
+
+    #[test]
+    fn restores_status() {
+        // Push a return address pointing straight at a BRK so nothing runs after
+        // RTI to clobber the flags. Status byte 0xC3 = N V Z C set.
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x90,
+                op(PHA, Implied),
+                op(LDA, Immediate),
+                0x00,
+                op(PHA, Implied),
+                op(LDA, Immediate),
+                0xC3, // 1100_0011 -> negative, overflow, zero, carry
+                op(PHA, Implied),
+                op(RTI, Implied),
+            ],
+            &[(0x9000, op(BRK, Implied))],
+        );
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+        assert!(cpu.status.overflow);
+        assert!(cpu.status.negative);
+        assert!(!cpu.status.interrupt);
+        assert!(!cpu.status.decimal);
+    }
+}

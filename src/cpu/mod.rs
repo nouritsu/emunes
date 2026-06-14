@@ -118,6 +118,18 @@ impl Cpu {
         self.mem_read(0x0100 + self.stack_pointer as u16)
     }
 
+    fn stack_push_u16(&mut self, data: u16) {
+        self.stack_push((data >> 8) as u8);
+        self.stack_push((data & 0xff) as u8);
+    }
+
+    fn stack_pull_u16(&mut self) -> u16 {
+        let lo = self.stack_pull() as u16;
+        let hi = self.stack_pull() as u16;
+
+        (hi << 8) | lo
+    }
+
     // Instruction Helpers
     fn resolve(&mut self, mode: AddressingMode) -> Operand {
         use AddressingMode as Mode;
@@ -319,8 +331,11 @@ impl Cpu {
 
             // System
             Mnemonic::BRK => return Flow::Halt,
-            Mnemonic::NOP => todo!(),
-            Mnemonic::RTI => todo!(),
+            Mnemonic::NOP => { /* no operation */ }
+            Mnemonic::RTI => {
+                self.status = Status::from_byte(self.stack_pull());
+                self.program_counter = self.stack_pull_u16();
+            }
         }
 
         Flow::Continue
