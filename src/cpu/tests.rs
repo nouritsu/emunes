@@ -1228,3 +1228,262 @@ mod bit {
         assert!(cpu.status.overflow); // bit 6
     }
 }
+
+mod inc {
+    use super::*;
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![op(INC, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x41)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn wraps_and_sets_zero_flag() {
+        // 0xFF + 1 wraps to 0x00
+        let cpu = run_seeded(
+            vec![op(INC, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0xFF)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x00);
+        assert!(cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        // 0x7F + 1 = 0x80
+        let cpu = run_seeded(
+            vec![op(INC, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x7F)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x80);
+        assert!(!cpu.status.zero);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn absolute() {
+        let cpu = run_seeded(
+            vec![op(INC, Absolute), 0x34, 0x12, op(BRK, Implied)],
+            &[(0x1234, 0x41)],
+        );
+        assert_eq!(cpu.mem_read(0x1234), 0x42);
+    }
+}
+
+mod dec {
+    use super::*;
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![op(DEC, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x43)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run_seeded(
+            vec![op(DEC, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x01)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x00);
+        assert!(cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn wraps_and_sets_negative_flag() {
+        // 0x00 - 1 wraps to 0xFF
+        let cpu = run_seeded(
+            vec![op(DEC, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x00)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0xFF);
+        assert!(!cpu.status.zero);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn absolute() {
+        let cpu = run_seeded(
+            vec![op(DEC, Absolute), 0x34, 0x12, op(BRK, Implied)],
+            &[(0x1234, 0x43)],
+        );
+        assert_eq!(cpu.mem_read(0x1234), 0x42);
+    }
+}
+
+mod inx {
+    use super::*;
+
+    #[test]
+    fn increments_x() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x41,
+            op(INX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn wraps_and_sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0xFF,
+            op(INX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x7F,
+            op(INX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod iny {
+    use super::*;
+
+    #[test]
+    fn increments_y() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x41,
+            op(INY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn wraps_and_sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0xFF,
+            op(INY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x7F,
+            op(INY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x80);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod dex {
+    use super::*;
+
+    #[test]
+    fn decrements_x() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x43,
+            op(DEX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x01,
+            op(DEX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn wraps_and_sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x00,
+            op(DEX, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0xFF);
+        assert!(cpu.status.negative);
+    }
+}
+
+mod dey {
+    use super::*;
+
+    #[test]
+    fn decrements_y() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x43,
+            op(DEY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x42);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_flag() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x01,
+            op(DEY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0x00);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn wraps_and_sets_negative_flag() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x00,
+            op(DEY, Implied),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_y, 0xFF);
+        assert!(cpu.status.negative);
+    }
+}

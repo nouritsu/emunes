@@ -260,12 +260,32 @@ impl Cpu {
             Mnemonic::CPY => todo!(),
 
             // Increments / Decrements
-            Mnemonic::INC => todo!(),
-            Mnemonic::INX => todo!(),
-            Mnemonic::INY => todo!(),
-            Mnemonic::DEC => todo!(),
-            Mnemonic::DEX => todo!(),
-            Mnemonic::DEY => todo!(),
+            Mnemonic::INC => {
+                let value = self.op_read(operand).wrapping_add(1);
+                self.op_write(operand, value);
+                self.update_zn(value);
+            }
+            Mnemonic::INX => {
+                self.register_x = self.register_x.wrapping_add(1);
+                self.update_zn(self.register_x);
+            }
+            Mnemonic::INY => {
+                self.register_y = self.register_y.wrapping_add(1);
+                self.update_zn(self.register_y);
+            }
+            Mnemonic::DEC => {
+                let value = self.op_read(operand).wrapping_sub(1);
+                self.op_write(operand, value);
+                self.update_zn(value);
+            }
+            Mnemonic::DEX => {
+                self.register_x = self.register_x.wrapping_sub(1);
+                self.update_zn(self.register_x);
+            }
+            Mnemonic::DEY => {
+                self.register_y = self.register_y.wrapping_sub(1);
+                self.update_zn(self.register_y);
+            }
 
             // Shifts
             Mnemonic::ASL => todo!(),
