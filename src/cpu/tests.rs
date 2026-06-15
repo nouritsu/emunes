@@ -1858,3 +1858,147 @@ mod bvs {
         assert_eq!(run_branch(&[op(CLV, Implied)], BVS).register_x, 0xFF);
     }
 }
+
+mod jmp {
+    use super::*;
+
+    #[test]
+    fn absolute() {
+        // JMP $9000 skips the LDX #$FF and lands on seeded code that sets X.
+        let cpu = run_seeded(
+            vec![
+                op(JMP, Absolute),
+                0x00,
+                0x90,
+                op(LDX, Immediate),
+                0xFF, // jumped over
+                op(BRK, Implied),
+            ],
+            &[
+                (0x9000, op(LDX, Immediate)),
+                (0x9001, 0x42),
+                (0x9002, op(BRK, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_x, 0x42);
+    }
+
+    #[test]
+    fn indirect() {
+        // JMP ($9000) reads the target from the pointer at 0x9000 (= 0xA000).
+        let cpu = run_seeded(
+            vec![op(JMP, Indirect), 0x00, 0x90, op(BRK, Implied)],
+            &[
+                (0x9000, 0x00), // pointer low
+                (0x9001, 0xA0), // pointer high -> target 0xA000
+                (0xA000, op(LDX, Immediate)),
+                (0xA001, 0x42),
+                (0xA002, op(BRK, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_x, 0x42);
+    }
+
+    #[test]
+    fn indirect_page_boundary_bug() {
+        // With the pointer at 0x90FF, the 6502 reads the high byte from 0x9000
+        // (same page) instead of 0x9100. Seed 0x9100 with a decoy that a
+        // spec-correct CPU would use; this implementation must ignore it and
+        // land on 0xB000.
+        let cpu = run_seeded(
+            vec![op(JMP, Indirect), 0xFF, 0x90, op(BRK, Implied)],
+            &[
+                (0x90FF, 0x00), // pointer low
+                (0x9000, 0xB0), // buggy high source -> target 0xB000
+                (0x9100, 0xCC), // decoy high; must be ignored
+                (0xB000, op(LDX, Immediate)),
+                (0xB001, 0x42),
+                (0xB002, op(BRK, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_x, 0x42);
+    }
+}
+
+mod jsr {
+    use super::*;
+
+    #[test]
+    fn pushes_return_address_minus_one() {
+        // JSR occupies 0x8000..=0x8002, so the return address is 0x8003 and the
+        // pushed value is 0x8002 (hi at 0x01FD, lo at 0x01FC). The subroutine is
+        // a bare BRK so nothing runs afterward to disturb the stack.
+        let cpu = run_seeded(
+            vec![op(JSR, Absolute), 0x00, 0x90, op(BRK, Implied)],
+            &[(0x9000, op(BRK, Implied))],
+        );
+        assert_eq!(cpu.mem_read(0x01FD), 0x80); // return-1 high byte
+        assert_eq!(cpu.mem_read(0x01FC), 0x02); // return-1 low byte
+        assert_eq!(cpu.stack_pointer, 0xFB); // two bytes pushed from 0xFD
+    }
+
+    #[test]
+    fn jumps_to_subroutine() {
+        // The subroutine sets Y; reaching Y = 0x99 proves control transferred.
+        let cpu = run_seeded(
+            vec![op(JSR, Absolute), 0x00, 0x90, op(BRK, Implied)],
+            &[
+                (0x9000, op(LDY, Immediate)),
+                (0x9001, 0x99),
+                (0x9002, op(BRK, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_y, 0x99);
+    }
+
+    #[test]
+    fn round_trips_with_rts() {
+        // JSR into a routine that sets Y and returns; execution must resume at
+        // the LDX right after the 3-byte JSR. X = 0x42 proves RTS returned to the
+        // correct address, Y = 0x99 proves the subroutine ran.
+        let cpu = run_seeded(
+            vec![
+                op(JSR, Absolute),
+                0x00,
+                0x90,
+                op(LDX, Immediate),
+                0x42, // runs only if RTS returns here
+                op(BRK, Implied),
+            ],
+            &[
+                (0x9000, op(LDY, Immediate)),
+                (0x9001, 0x99),
+                (0x9002, op(RTS, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_x, 0x42);
+        assert_eq!(cpu.register_y, 0x99);
+    }
+}
+
+mod rts {
+    use super::*;
+
+    #[test]
+    fn returns_to_pulled_address_plus_one() {
+        // Manually push 0x8FFF (hi then lo, matching JSR's order). RTS pulls it
+        // and adds 1, resuming at 0x9000 where seeded code sets X.
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x8F, // return-1 high byte
+                op(PHA, Implied),
+                op(LDA, Immediate),
+                0xFF, // return-1 low byte
+                op(PHA, Implied),
+                op(RTS, Implied),
+            ],
+            &[
+                (0x9000, op(LDX, Immediate)),
+                (0x9001, 0x42),
+                (0x9002, op(BRK, Implied)),
+            ],
+        );
+        assert_eq!(cpu.register_x, 0x42);
+    }
+}

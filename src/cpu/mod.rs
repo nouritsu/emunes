@@ -306,9 +306,12 @@ impl Cpu {
             Mnemonic::ROR => todo!(),
 
             // Jumps / Calls
-            Mnemonic::JMP => todo!(),
-            Mnemonic::JSR => todo!(),
-            Mnemonic::RTS => todo!(),
+            Mnemonic::JMP => self.jump(operand),
+            Mnemonic::JSR => {
+                self.stack_push_u16(self.program_counter.wrapping_sub(1));
+                self.jump(operand);
+            }
+            Mnemonic::RTS => self.program_counter = self.stack_pull_u16().wrapping_add(1),
 
             // Branches
             Mnemonic::BCS => self.branch(self.status.carry, operand),
@@ -341,13 +344,17 @@ impl Cpu {
         Flow::Continue
     }
 
+    fn jump(&mut self, operand: Operand) {
+        if let Operand::Address(addr) = operand {
+            self.program_counter = addr;
+        } else {
+            unreachable!();
+        }
+    }
+
     fn branch(&mut self, condition: bool, operand: Operand) {
         if condition {
-            if let Operand::Address(addr) = operand {
-                self.program_counter = addr;
-            } else {
-                unreachable!("branch called with non address operand")
-            }
+            self.jump(operand); // a branch is a conditional jump
         }
     }
 
