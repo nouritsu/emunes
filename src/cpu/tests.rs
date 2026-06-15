@@ -2002,3 +2002,235 @@ mod rts {
         assert_eq!(cpu.register_x, 0x42);
     }
 }
+
+mod asl {
+    use super::*;
+
+    #[test]
+    fn accumulator() {
+        // 0x01 << 1 = 0x02, old bit 7 was 0 so carry stays clear
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x01,
+            op(ASL, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x02);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_carry_and_zero() {
+        // 0x80 << 1 = 0x00, old bit 7 falls into carry
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(ASL, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_negative() {
+        // 0x40 << 1 = 0x80
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x40,
+            op(ASL, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(!cpu.status.carry);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        // shifts memory in place: 0x02 << 1 = 0x04
+        let cpu = run_seeded(
+            vec![op(ASL, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x02)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x04);
+    }
+}
+
+mod lsr {
+    use super::*;
+
+    #[test]
+    fn accumulator() {
+        // 0x02 >> 1 = 0x01, old bit 0 was 0 so carry stays clear
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x02,
+            op(LSR, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x01);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_carry_and_zero() {
+        // 0x01 >> 1 = 0x00, old bit 0 falls into carry
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x01,
+            op(LSR, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn always_clears_negative() {
+        // LSR shifts a 0 into bit 7, so N is always cleared even from 0x80
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x80,
+            op(LSR, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x40);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        // 0x04 >> 1 = 0x02
+        let cpu = run_seeded(
+            vec![op(LSR, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x04)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x02);
+    }
+}
+
+mod rol {
+    use super::*;
+
+    #[test]
+    fn rotates_carry_into_bit_0() {
+        // carry set rotates a 1 into bit 0: 0x01 << 1 = 0x02, | 1 = 0x03
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x01,
+            op(ROL, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x03);
+        assert!(!cpu.status.carry); // old bit 7 of 0x01 was 0
+    }
+
+    #[test]
+    fn clear_carry_leaves_bit_0_zero() {
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0x01,
+            op(ROL, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x02);
+        assert!(!cpu.status.carry);
+    }
+
+    #[test]
+    fn rotates_through_carry() {
+        // old bit 7 leaves into carry while old carry enters bit 0:
+        // 0x80 << 1 = 0x00, | carry(1) = 0x01, new carry = old bit 7 = 1
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x80,
+            op(ROL, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x01);
+        assert!(cpu.status.carry);
+        assert!(!cpu.status.zero);
+    }
+
+    #[test]
+    fn zero_page() {
+        // carry clear: 0x01 << 1 = 0x02
+        let cpu = run_seeded(
+            vec![op(CLC, Implied), op(ROL, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x01)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x02);
+    }
+}
+
+mod ror {
+    use super::*;
+
+    #[test]
+    fn rotates_carry_into_bit_7() {
+        // carry set rotates a 1 into bit 7: 0x00 >> 1 = 0x00, | 0x80 = 0x80
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x00,
+            op(ROR, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x80);
+        assert!(!cpu.status.carry); // old bit 0 of 0x00 was 0
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn clear_carry_leaves_bit_7_zero() {
+        // 0x02 >> 1 = 0x01, no carry in, no carry out
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0x02,
+            op(ROR, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x01);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn rotates_out_carry_and_sets_zero() {
+        // old bit 0 leaves into carry: 0x01 >> 1 = 0x00, carry in clear
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0x01,
+            op(ROR, Accumulator),
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn zero_page() {
+        // carry clear: 0x02 >> 1 = 0x01
+        let cpu = run_seeded(
+            vec![op(CLC, Implied), op(ROR, ZeroPage), 0x10, op(BRK, Implied)],
+            &[(0x10, 0x02)],
+        );
+        assert_eq!(cpu.mem_read(0x10), 0x01);
+    }
+}

@@ -207,7 +207,6 @@ impl Cpu {
                 self.register_y = byte;
                 self.update_zn(byte);
             }
-
             Mnemonic::STA => self.op_write(operand, self.register_a),
             Mnemonic::STX => self.op_write(operand, self.register_x),
             Mnemonic::STY => self.op_write(operand, self.register_y),
@@ -300,10 +299,38 @@ impl Cpu {
             }
 
             // Shifts
-            Mnemonic::ASL => todo!(),
-            Mnemonic::LSR => todo!(),
-            Mnemonic::ROL => todo!(),
-            Mnemonic::ROR => todo!(),
+            Mnemonic::ASL => {
+                let value = self.op_read(operand);
+                let result = value << 1;
+
+                self.op_write(operand, result);
+                self.status.carry = value & 0b1000_0000 != 0;
+                self.update_zn(result);
+            }
+            Mnemonic::LSR => {
+                let value = self.op_read(operand);
+                let result = value >> 1;
+
+                self.op_write(operand, result);
+                self.status.carry = value & 0b0000_0001 != 0;
+                self.update_zn(result);
+            }
+            Mnemonic::ROL => {
+                let value = self.op_read(operand);
+                let result = (value << 1) | (self.status.carry as u8);
+
+                self.op_write(operand, result);
+                self.status.carry = value & 0b1000_0000 != 0;
+                self.update_zn(result);
+            }
+            Mnemonic::ROR => {
+                let value = self.op_read(operand);
+                let result = (value >> 1) | ((self.status.carry as u8) << 7);
+
+                self.op_write(operand, result);
+                self.status.carry = value & 0b0000_0001 != 0;
+                self.update_zn(result);
+            }
 
             // Jumps / Calls
             Mnemonic::JMP => self.jump(operand),
