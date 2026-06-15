@@ -1248,6 +1248,385 @@ mod bit {
     }
 }
 
+mod adc {
+    use super::*;
+
+    #[test]
+    fn adds_with_carry_clear() {
+        // CLC so no carry-in: 0x10 + 0x20 = 0x30
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0x10,
+            op(ADC, Immediate),
+            0x20,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x30);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.overflow);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn adds_carry_in() {
+        // SEC adds an extra 1: 0x10 + 0x20 + 1 = 0x31
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x10,
+            op(ADC, Immediate),
+            0x20,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x31);
+    }
+
+    #[test]
+    fn sets_carry_and_zero_on_wrap() {
+        // 0xFF + 0x01 = 0x100 -> result 0x00, carry out
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0xFF,
+            op(ADC, Immediate),
+            0x01,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_overflow_on_signed_wrap() {
+        // 0x50 + 0x50 = 0xA0: two positives sum to a negative, so V is set.
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0x50,
+            op(ADC, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0xA0);
+        assert!(cpu.status.overflow);
+        assert!(cpu.status.negative);
+        assert!(!cpu.status.carry);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(CLC, Implied),
+                op(LDA, Immediate),
+                0x10,
+                op(ADC, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x20)],
+        );
+        assert_eq!(cpu.register_a, 0x30);
+    }
+}
+
+mod sbc {
+    use super::*;
+
+    // SBC computes A - M - (1 - C), so a borrowless subtraction needs SEC first.
+
+    #[test]
+    fn subtracts_with_carry_set() {
+        // SEC clears the borrow: 0x50 - 0x10 = 0x40, carry stays set (no borrow)
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x50,
+            op(SBC, Immediate),
+            0x10,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x40);
+        assert!(cpu.status.carry);
+        assert!(!cpu.status.overflow);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn borrows_when_carry_clear() {
+        // CLC injects a borrow: 0x50 - 0x10 - 1 = 0x3F
+        let cpu = run(vec![
+            op(CLC, Implied),
+            op(LDA, Immediate),
+            0x50,
+            op(SBC, Immediate),
+            0x10,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x3F);
+        assert!(cpu.status.carry); // no borrow out of this subtraction
+    }
+
+    #[test]
+    fn clears_carry_on_borrow() {
+        // 0x50 - 0x60 underflows to 0xF0; carry clears to signal the borrow.
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x50,
+            op(SBC, Immediate),
+            0x60,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0xF0);
+        assert!(!cpu.status.carry);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_zero_when_equal() {
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x50,
+            op(SBC, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.zero);
+        assert!(cpu.status.carry);
+    }
+
+    #[test]
+    fn sets_overflow_on_signed_wrap() {
+        // 0x50 - 0xB0: positive minus negative yielding a negative result, so V
+        // is set. 0x50 - 0xB0 = 0xA0 with a borrow (carry clear).
+        let cpu = run(vec![
+            op(SEC, Implied),
+            op(LDA, Immediate),
+            0x50,
+            op(SBC, Immediate),
+            0xB0,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0xA0);
+        assert!(cpu.status.overflow);
+        assert!(!cpu.status.carry);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(SEC, Implied),
+                op(LDA, Immediate),
+                0x50,
+                op(SBC, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x10)],
+        );
+        assert_eq!(cpu.register_a, 0x40);
+    }
+}
+
+mod cmp {
+    use super::*;
+
+    #[test]
+    fn sets_carry_when_greater() {
+        // A(0x50) > M(0x30): carry set, result 0x20 is nonzero and positive
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x50,
+            op(CMP, Immediate),
+            0x30,
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(!cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn sets_carry_and_zero_when_equal() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x50,
+            op(CMP, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+        assert!(!cpu.status.negative);
+    }
+
+    #[test]
+    fn clears_carry_when_less() {
+        // A(0x30) < M(0x50): carry clear, 0x30 - 0x50 = 0xE0 sets negative
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x30,
+            op(CMP, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert!(!cpu.status.carry);
+        assert!(!cpu.status.zero);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn leaves_accumulator_unchanged() {
+        let cpu = run(vec![
+            op(LDA, Immediate),
+            0x50,
+            op(CMP, Immediate),
+            0x30,
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_a, 0x50);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(LDA, Immediate),
+                0x50,
+                op(CMP, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x50)],
+        );
+        assert!(cpu.status.zero);
+    }
+}
+
+mod cpx {
+    use super::*;
+
+    #[test]
+    fn sets_carry_when_greater() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x50,
+            op(CPX, Immediate),
+            0x30,
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(!cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_zero_when_equal() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x50,
+            op(CPX, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn clears_carry_when_less() {
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x30,
+            op(CPX, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert!(!cpu.status.carry);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(LDX, Immediate),
+                0x50,
+                op(CPX, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x50)],
+        );
+        assert!(cpu.status.zero);
+    }
+}
+
+mod cpy {
+    use super::*;
+
+    #[test]
+    fn sets_carry_when_greater() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x50,
+            op(CPY, Immediate),
+            0x30,
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(!cpu.status.zero);
+    }
+
+    #[test]
+    fn sets_zero_when_equal() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x50,
+            op(CPY, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert!(cpu.status.carry);
+        assert!(cpu.status.zero);
+    }
+
+    #[test]
+    fn clears_carry_when_less() {
+        let cpu = run(vec![
+            op(LDY, Immediate),
+            0x30,
+            op(CPY, Immediate),
+            0x50,
+            op(BRK, Implied),
+        ]);
+        assert!(!cpu.status.carry);
+        assert!(cpu.status.negative);
+    }
+
+    #[test]
+    fn zero_page() {
+        let cpu = run_seeded(
+            vec![
+                op(LDY, Immediate),
+                0x50,
+                op(CPY, ZeroPage),
+                0x10,
+                op(BRK, Implied),
+            ],
+            &[(0x10, 0x50)],
+        );
+        assert!(cpu.status.zero);
+    }
+}
+
 mod inc {
     use super::*;
 

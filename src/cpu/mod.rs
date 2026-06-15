@@ -264,11 +264,11 @@ impl Cpu {
             }
 
             // Arithmetic
-            Mnemonic::ADC => todo!(),
-            Mnemonic::SBC => todo!(),
-            Mnemonic::CMP => todo!(),
-            Mnemonic::CPX => todo!(),
-            Mnemonic::CPY => todo!(),
+            Mnemonic::ADC => self.add(self.op_read(operand)),
+            Mnemonic::SBC => self.add(!self.op_read(operand)),
+            Mnemonic::CMP => self.compare(self.register_a, self.op_read(operand)),
+            Mnemonic::CPX => self.compare(self.register_x, self.op_read(operand)),
+            Mnemonic::CPY => self.compare(self.register_y, self.op_read(operand)),
 
             // Increments / Decrements
             Mnemonic::INC => {
@@ -383,6 +383,21 @@ impl Cpu {
         if condition {
             self.jump(operand); // a branch is a conditional jump
         }
+    }
+
+    fn add(&mut self, value: u8) {
+        let sum = self.register_a as u16 + value as u16 + self.status.carry as u16;
+        let result = sum as u8;
+
+        self.status.carry = sum > 0xFF;
+        self.status.overflow = (self.register_a ^ result) & (value ^ result) & 0b1000_0000 != 0;
+        self.register_a = result;
+        self.update_zn(result);
+    }
+
+    fn compare(&mut self, register: u8, value: u8) {
+        self.status.carry = register >= value;
+        self.update_zn(register.wrapping_sub(value));
     }
 
     // Operand Helpers
