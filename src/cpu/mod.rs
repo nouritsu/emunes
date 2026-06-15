@@ -311,14 +311,14 @@ impl Cpu {
             Mnemonic::RTS => todo!(),
 
             // Branches
-            Mnemonic::BCC => todo!(),
-            Mnemonic::BCS => todo!(),
-            Mnemonic::BEQ => todo!(),
-            Mnemonic::BMI => todo!(),
-            Mnemonic::BNE => todo!(),
-            Mnemonic::BPL => todo!(),
-            Mnemonic::BVC => todo!(),
-            Mnemonic::BVS => todo!(),
+            Mnemonic::BCS => self.branch(self.status.carry, operand),
+            Mnemonic::BCC => self.branch(!self.status.carry, operand),
+            Mnemonic::BEQ => self.branch(self.status.zero, operand),
+            Mnemonic::BNE => self.branch(!self.status.zero, operand),
+            Mnemonic::BMI => self.branch(self.status.negative, operand),
+            Mnemonic::BPL => self.branch(!self.status.negative, operand),
+            Mnemonic::BVS => self.branch(self.status.overflow, operand),
+            Mnemonic::BVC => self.branch(!self.status.overflow, operand),
 
             // Status Flag Changes
             Mnemonic::CLC => self.status.carry = false,
@@ -339,6 +339,16 @@ impl Cpu {
         }
 
         Flow::Continue
+    }
+
+    fn branch(&mut self, condition: bool, operand: Operand) {
+        if condition {
+            if let Operand::Address(addr) = operand {
+                self.program_counter = addr;
+            } else {
+                unreachable!("branch called with non address operand")
+            }
+        }
     }
 
     // Operand Helpers

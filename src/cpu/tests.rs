@@ -27,6 +27,25 @@ fn run_seeded(program: Vec<u8>, seed: &[(u16, u8)]) -> Cpu {
     cpu
 }
 
+/// Runs `LDX #$42; <setup>; <branch> +2; LDX #$FF; BRK`.
+///
+/// The branch's target is the final BRK, so a taken branch skips the
+/// `LDX #$FF` and leaves X = 0x42; a non-taken branch falls through to it and
+/// leaves X = 0xFF. X is the sentinel because the flag `setup` is free to
+/// clobber A (the overflow setup pushes/pulls through it).
+fn run_branch(setup: &[u8], mnemonic: Mnemonic) -> Cpu {
+    let mut program = vec![op(LDX, Immediate), 0x42];
+    program.extend_from_slice(setup);
+    program.extend_from_slice(&[
+        op(mnemonic, Relative),
+        0x02, // skip the 2-byte LDX #$FF that follows
+        op(LDX, Immediate),
+        0xFF,
+        op(BRK, Implied),
+    ]);
+    run(program)
+}
+
 mod lda {
     use super::*;
 
@@ -1676,5 +1695,166 @@ mod rti {
         assert!(cpu.status.negative);
         assert!(!cpu.status.interrupt);
         assert!(!cpu.status.decimal);
+    }
+}
+
+// Each branch test uses `run_branch`, which sets a sentinel X = 0x42, applies
+// the given flag setup, then branches over an `LDX #$FF`. A taken branch leaves
+// X = 0x42; a non-taken branch falls through and leaves X = 0xFF. Flag setups:
+// SEC/CLC and CLV act directly; zero/negative lean on LDA's side effects; V is
+// seeded by pulling status byte 0x40 (overflow only) via PHA/PLP.
+
+mod bcc {
+    use super::*;
+
+    #[test]
+    fn taken_when_carry_clear() {
+        assert_eq!(run_branch(&[op(CLC, Implied)], BCC).register_x, 0x42);
+    }
+
+    #[test]
+    fn not_taken_when_carry_set() {
+        assert_eq!(run_branch(&[op(SEC, Implied)], BCC).register_x, 0xFF);
+    }
+}
+
+mod bcs {
+    use super::*;
+
+    #[test]
+    fn taken_when_carry_set() {
+        assert_eq!(run_branch(&[op(SEC, Implied)], BCS).register_x, 0x42);
+    }
+
+    #[test]
+    fn not_taken_when_carry_clear() {
+        assert_eq!(run_branch(&[op(CLC, Implied)], BCS).register_x, 0xFF);
+    }
+}
+
+mod beq {
+    use super::*;
+
+    #[test]
+    fn taken_when_zero_set() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x00], BEQ).register_x,
+            0x42
+        );
+    }
+
+    #[test]
+    fn not_taken_when_zero_clear() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x01], BEQ).register_x,
+            0xFF
+        );
+    }
+}
+
+mod bne {
+    use super::*;
+
+    #[test]
+    fn taken_when_zero_clear() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x01], BNE).register_x,
+            0x42
+        );
+    }
+
+    #[test]
+    fn not_taken_when_zero_set() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x00], BNE).register_x,
+            0xFF
+        );
+    }
+
+    #[test]
+    fn branches_backward_with_negative_offset() {
+        // LDX #$03; loop: DEX; BNE loop; BRK
+        // The 0xFD (-3) offset jumps back to DEX, so X counts down to 0. This is
+        // the case the `offset as i8` sign extension in `resolve` exists for.
+        let cpu = run(vec![
+            op(LDX, Immediate),
+            0x03,
+            op(DEX, Implied), // loop target
+            op(BNE, Relative),
+            0xFD, // -3 -> back to DEX
+            op(BRK, Implied),
+        ]);
+        assert_eq!(cpu.register_x, 0x00);
+        assert!(cpu.status.zero);
+    }
+}
+
+mod bmi {
+    use super::*;
+
+    #[test]
+    fn taken_when_negative_set() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x80], BMI).register_x,
+            0x42
+        );
+    }
+
+    #[test]
+    fn not_taken_when_negative_clear() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x00], BMI).register_x,
+            0xFF
+        );
+    }
+}
+
+mod bpl {
+    use super::*;
+
+    #[test]
+    fn taken_when_negative_clear() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x00], BPL).register_x,
+            0x42
+        );
+    }
+
+    #[test]
+    fn not_taken_when_negative_set() {
+        assert_eq!(
+            run_branch(&[op(LDA, Immediate), 0x80], BPL).register_x,
+            0xFF
+        );
+    }
+}
+
+mod bvc {
+    use super::*;
+
+    #[test]
+    fn taken_when_overflow_clear() {
+        assert_eq!(run_branch(&[op(CLV, Implied)], BVC).register_x, 0x42);
+    }
+
+    #[test]
+    fn not_taken_when_overflow_set() {
+        let setup = &[op(LDA, Immediate), 0x40, op(PHA, Implied), op(PLP, Implied)];
+        assert_eq!(run_branch(setup, BVC).register_x, 0xFF);
+    }
+}
+
+mod bvs {
+    use super::*;
+
+    #[test]
+    fn taken_when_overflow_set() {
+        let setup = &[op(LDA, Immediate), 0x40, op(PHA, Implied), op(PLP, Implied)];
+        assert_eq!(run_branch(setup, BVS).register_x, 0x42);
+    }
+
+    #[test]
+    fn not_taken_when_overflow_clear() {
+        assert_eq!(run_branch(&[op(CLV, Implied)], BVS).register_x, 0xFF);
     }
 }
