@@ -79,7 +79,7 @@
       devShells.default = craneLib.devShell {
         inherit (pre-commit-check) shellHook;
         inputsFrom = [emunes];
-        packages = [rustToolchain];
+        packages = [rustToolchain pkgs.python3];
 
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.SDL2];
       };
