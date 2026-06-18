@@ -60,10 +60,19 @@ impl Cpu {
     }
 
     pub fn run(&mut self) {
+        self.run_with(|_| {});
+    }
+
+    pub fn run_with<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut Cpu),
+    {
         loop {
             let byte = self.mem_read(self.program_counter);
             let opcode = OPCODES[byte as usize].expect("unknown instruction");
             self.program_counter += 1;
+
+            callback(self);
 
             let operand = self.resolve(opcode.mode);
             match self.apply(opcode.mnemonic, operand) {

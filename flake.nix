@@ -39,6 +39,9 @@
       commonArgs = {
         inherit src;
         strictDeps = true;
+
+        nativeBuildInputs = [pkgs.pkg-config];
+        buildInputs = [pkgs.SDL2];
       };
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -77,6 +80,8 @@
         inherit (pre-commit-check) shellHook;
         inputsFrom = [emunes];
         packages = [rustToolchain];
+
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.SDL2];
       };
     });
 }
