@@ -1,3 +1,4 @@
+use emunes::bus::Mem;
 use emunes::cpu::Cpu;
 use rand::RngExt;
 use sdl2::{

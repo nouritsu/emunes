@@ -100,16 +100,17 @@ mod lda {
 
     #[test]
     fn zero_page_x_wraps_in_zero_page() {
-        // base = 0xFF, X = 2 -> wraps to 0x01 (not 0x101)
+        // base = 0xFF, X = 0x12 -> wraps to 0x11 (not 0x111). The wrap target is
+        // kept above the program (loaded at 0x0000) so it doesn't alias the code.
         let cpu = run_seeded(
             vec![
                 op(LDX, Immediate),
-                0x02,
+                0x12,
                 op(LDA, ZeroPageX),
                 0xFF,
                 op(BRK, Implied),
             ],
-            &[(0x01, 0x42)],
+            &[(0x11, 0x42)],
         );
         assert_eq!(cpu.register_a, 0x42);
     }
@@ -157,7 +158,7 @@ mod lda {
 
     #[test]
     fn indirect_x() {
-        // X = 1, zp operand 0x10 -> pointer read from 0x11/0x12 = 0x3000
+        // X = 1, zp operand 0x10 -> pointer read from 0x11/0x12 = 0x0700
         let cpu = run_seeded(
             vec![
                 op(LDX, Immediate),
@@ -166,14 +167,14 @@ mod lda {
                 0x10,
                 op(BRK, Implied),
             ],
-            &[(0x11, 0x00), (0x12, 0x30), (0x3000, 0x42)],
+            &[(0x11, 0x00), (0x12, 0x07), (0x0700, 0x42)],
         );
         assert_eq!(cpu.register_a, 0x42);
     }
 
     #[test]
     fn indirect_y() {
-        // pointer at 0x10/0x11 = 0x3000, then + Y(4) = 0x3004
+        // pointer at 0x10/0x11 = 0x0700, then + Y(4) = 0x0704
         let cpu = run_seeded(
             vec![
                 op(LDY, Immediate),
@@ -182,7 +183,7 @@ mod lda {
                 0x10,
                 op(BRK, Implied),
             ],
-            &[(0x10, 0x00), (0x11, 0x30), (0x3004, 0x42)],
+            &[(0x10, 0x00), (0x11, 0x07), (0x0704, 0x42)],
         );
         assert_eq!(cpu.register_a, 0x42);
     }
@@ -408,7 +409,7 @@ mod sta {
 
     #[test]
     fn indirect_x() {
-        // pointer at 0x11/0x12 = 0x3000
+        // pointer at 0x11/0x12 = 0x0700
         let cpu = run_seeded(
             vec![
                 op(LDA, Immediate),
@@ -419,14 +420,14 @@ mod sta {
                 0x10,
                 op(BRK, Implied),
             ],
-            &[(0x11, 0x00), (0x12, 0x30)],
+            &[(0x11, 0x00), (0x12, 0x07)],
         );
-        assert_eq!(cpu.mem_read(0x3000), 0x42);
+        assert_eq!(cpu.mem_read(0x0700), 0x42);
     }
 
     #[test]
     fn indirect_y() {
-        // pointer at 0x10/0x11 = 0x3000, + Y(4) = 0x3004
+        // pointer at 0x10/0x11 = 0x0700, + Y(4) = 0x0704
         let cpu = run_seeded(
             vec![
                 op(LDA, Immediate),
@@ -437,9 +438,9 @@ mod sta {
                 0x10,
                 op(BRK, Implied),
             ],
-            &[(0x10, 0x00), (0x11, 0x30)],
+            &[(0x10, 0x00), (0x11, 0x07)],
         );
-        assert_eq!(cpu.mem_read(0x3004), 0x42);
+        assert_eq!(cpu.mem_read(0x0704), 0x42);
     }
 }
 
@@ -2025,12 +2026,12 @@ mod rti {
 
     #[test]
     fn returns_to_pulled_address() {
-        // Push return address 0x9000, then a status byte, then RTI. Control should
-        // resume at 0x9000, where a seeded `LDX #$99; BRK` proves we arrived.
+        // Push return address 0x0600, then a status byte, then RTI. Control should
+        // resume at 0x0600, where a seeded `LDX #$99; BRK` proves we arrived.
         let cpu = run_seeded(
             vec![
                 op(LDA, Immediate),
-                0x90, // hi byte of return address
+                0x06, // hi byte of return address
                 op(PHA, Implied),
                 op(LDA, Immediate),
                 0x00, // lo byte of return address
@@ -2041,9 +2042,9 @@ mod rti {
                 op(RTI, Implied),
             ],
             &[
-                (0x9000, op(LDX, Immediate)),
-                (0x9001, 0x99),
-                (0x9002, op(BRK, Implied)),
+                (0x0600, op(LDX, Immediate)),
+                (0x0601, 0x99),
+                (0x0602, op(BRK, Implied)),
             ],
         );
         assert_eq!(cpu.register_x, 0x99);
@@ -2056,7 +2057,7 @@ mod rti {
         let cpu = run_seeded(
             vec![
                 op(LDA, Immediate),
-                0x90,
+                0x06,
                 op(PHA, Implied),
                 op(LDA, Immediate),
                 0x00,
@@ -2066,7 +2067,7 @@ mod rti {
                 op(PHA, Implied),
                 op(RTI, Implied),
             ],
-            &[(0x9000, op(BRK, Implied))],
+            &[(0x0600, op(BRK, Implied))],
         );
         assert!(cpu.status.carry);
         assert!(cpu.status.zero);
@@ -2243,20 +2244,20 @@ mod jmp {
 
     #[test]
     fn absolute() {
-        // JMP $9000 skips the LDX #$FF and lands on seeded code that sets X.
+        // JMP $0600 skips the LDX #$FF and lands on seeded code that sets X.
         let cpu = run_seeded(
             vec![
                 op(JMP, Absolute),
                 0x00,
-                0x90,
+                0x06,
                 op(LDX, Immediate),
                 0xFF, // jumped over
                 op(BRK, Implied),
             ],
             &[
-                (0x9000, op(LDX, Immediate)),
-                (0x9001, 0x42),
-                (0x9002, op(BRK, Implied)),
+                (0x0600, op(LDX, Immediate)),
+                (0x0601, 0x42),
+                (0x0602, op(BRK, Implied)),
             ],
         );
         assert_eq!(cpu.register_x, 0x42);
@@ -2264,15 +2265,15 @@ mod jmp {
 
     #[test]
     fn indirect() {
-        // JMP ($9000) reads the target from the pointer at 0x9000 (= 0xA000).
+        // JMP ($0600) reads the target from the pointer at 0x0600 (= 0x0700).
         let cpu = run_seeded(
-            vec![op(JMP, Indirect), 0x00, 0x90, op(BRK, Implied)],
+            vec![op(JMP, Indirect), 0x00, 0x06, op(BRK, Implied)],
             &[
-                (0x9000, 0x00), // pointer low
-                (0x9001, 0xA0), // pointer high -> target 0xA000
-                (0xA000, op(LDX, Immediate)),
-                (0xA001, 0x42),
-                (0xA002, op(BRK, Implied)),
+                (0x0600, 0x00), // pointer low
+                (0x0601, 0x07), // pointer high -> target 0x0700
+                (0x0700, op(LDX, Immediate)),
+                (0x0701, 0x42),
+                (0x0702, op(BRK, Implied)),
             ],
         );
         assert_eq!(cpu.register_x, 0x42);
@@ -2280,19 +2281,19 @@ mod jmp {
 
     #[test]
     fn indirect_page_boundary_bug() {
-        // With the pointer at 0x90FF, the 6502 reads the high byte from 0x9000
-        // (same page) instead of 0x9100. Seed 0x9100 with a decoy that a
+        // With the pointer at 0x06FF, the 6502 reads the high byte from 0x0600
+        // (same page) instead of 0x0700. Seed 0x0700 with a decoy that a
         // spec-correct CPU would use; this implementation must ignore it and
-        // land on 0xB000.
+        // land on 0x0500.
         let cpu = run_seeded(
-            vec![op(JMP, Indirect), 0xFF, 0x90, op(BRK, Implied)],
+            vec![op(JMP, Indirect), 0xFF, 0x06, op(BRK, Implied)],
             &[
-                (0x90FF, 0x00), // pointer low
-                (0x9000, 0xB0), // buggy high source -> target 0xB000
-                (0x9100, 0xCC), // decoy high; must be ignored
-                (0xB000, op(LDX, Immediate)),
-                (0xB001, 0x42),
-                (0xB002, op(BRK, Implied)),
+                (0x06FF, 0x00), // pointer low
+                (0x0600, 0x05), // buggy high source -> target 0x0500
+                (0x0700, 0xCC), // decoy high; must be ignored
+                (0x0500, op(LDX, Immediate)),
+                (0x0501, 0x42),
+                (0x0502, op(BRK, Implied)),
             ],
         );
         assert_eq!(cpu.register_x, 0x42);
@@ -2304,14 +2305,14 @@ mod jsr {
 
     #[test]
     fn pushes_return_address_minus_one() {
-        // JSR occupies 0x8000..=0x8002, so the return address is 0x8003 and the
-        // pushed value is 0x8002 (hi at 0x01FD, lo at 0x01FC). The subroutine is
+        // JSR occupies 0x0000..=0x0002, so the return address is 0x0003 and the
+        // pushed value is 0x0002 (hi at 0x01FD, lo at 0x01FC). The subroutine is
         // a bare BRK so nothing runs afterward to disturb the stack.
         let cpu = run_seeded(
-            vec![op(JSR, Absolute), 0x00, 0x90, op(BRK, Implied)],
-            &[(0x9000, op(BRK, Implied))],
+            vec![op(JSR, Absolute), 0x00, 0x06, op(BRK, Implied)],
+            &[(0x0600, op(BRK, Implied))],
         );
-        assert_eq!(cpu.mem_read(0x01FD), 0x80); // return-1 high byte
+        assert_eq!(cpu.mem_read(0x01FD), 0x00); // return-1 high byte
         assert_eq!(cpu.mem_read(0x01FC), 0x02); // return-1 low byte
         assert_eq!(cpu.stack_pointer, 0xFB); // two bytes pushed from 0xFD
     }
@@ -2320,11 +2321,11 @@ mod jsr {
     fn jumps_to_subroutine() {
         // The subroutine sets Y; reaching Y = 0x99 proves control transferred.
         let cpu = run_seeded(
-            vec![op(JSR, Absolute), 0x00, 0x90, op(BRK, Implied)],
+            vec![op(JSR, Absolute), 0x00, 0x06, op(BRK, Implied)],
             &[
-                (0x9000, op(LDY, Immediate)),
-                (0x9001, 0x99),
-                (0x9002, op(BRK, Implied)),
+                (0x0600, op(LDY, Immediate)),
+                (0x0601, 0x99),
+                (0x0602, op(BRK, Implied)),
             ],
         );
         assert_eq!(cpu.register_y, 0x99);
@@ -2339,15 +2340,15 @@ mod jsr {
             vec![
                 op(JSR, Absolute),
                 0x00,
-                0x90,
+                0x06,
                 op(LDX, Immediate),
                 0x42, // runs only if RTS returns here
                 op(BRK, Implied),
             ],
             &[
-                (0x9000, op(LDY, Immediate)),
-                (0x9001, 0x99),
-                (0x9002, op(RTS, Implied)),
+                (0x0600, op(LDY, Immediate)),
+                (0x0601, 0x99),
+                (0x0602, op(RTS, Implied)),
             ],
         );
         assert_eq!(cpu.register_x, 0x42);
@@ -2360,12 +2361,12 @@ mod rts {
 
     #[test]
     fn returns_to_pulled_address_plus_one() {
-        // Manually push 0x8FFF (hi then lo, matching JSR's order). RTS pulls it
-        // and adds 1, resuming at 0x9000 where seeded code sets X.
+        // Manually push 0x05FF (hi then lo, matching JSR's order). RTS pulls it
+        // and adds 1, resuming at 0x0600 where seeded code sets X.
         let cpu = run_seeded(
             vec![
                 op(LDA, Immediate),
-                0x8F, // return-1 high byte
+                0x05, // return-1 high byte
                 op(PHA, Implied),
                 op(LDA, Immediate),
                 0xFF, // return-1 low byte
@@ -2373,9 +2374,9 @@ mod rts {
                 op(RTS, Implied),
             ],
             &[
-                (0x9000, op(LDX, Immediate)),
-                (0x9001, 0x42),
-                (0x9002, op(BRK, Implied)),
+                (0x0600, op(LDX, Immediate)),
+                (0x0601, 0x42),
+                (0x0602, op(BRK, Implied)),
             ],
         );
         assert_eq!(cpu.register_x, 0x42);

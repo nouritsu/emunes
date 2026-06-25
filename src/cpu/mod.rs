@@ -4,10 +4,11 @@ mod status;
 #[cfg(test)]
 mod tests;
 
+use super::bus::{Bus, Mem};
 use instruction::{AddressingMode, Mnemonic, OPCODES, Operand};
 use status::Status;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Cpu {
     pub register_a: u8,
     pub register_x: u8,
@@ -15,7 +16,7 @@ pub struct Cpu {
     pub stack_pointer: u8,
     pub status: Status,
     pub program_counter: u16,
-    memory: [u8; 0x10000],
+    pub bus: Bus,
 }
 
 enum Flow {
@@ -23,17 +24,27 @@ enum Flow {
     Continue,
 }
 
+impl Mem for Cpu {
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.bus.mem_read(addr)
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.bus.mem_write(addr, data)
+    }
+
+    fn mem_read_u16(&self, addr: u16) -> u16 {
+        self.bus.mem_read_u16(addr)
+    }
+
+    fn mem_write_u16(&mut self, addr: u16, data: u16) {
+        self.bus.mem_write_u16(addr, data)
+    }
+}
+
 impl Cpu {
     pub fn new() -> Self {
-        Self {
-            register_a: 0,
-            register_x: 0,
-            register_y: 0,
-            stack_pointer: 0,
-            status: Status::default(),
-            program_counter: 0,
-            memory: [0; 0x10000],
-        }
+        Self::default()
     }
 
     pub fn reset(&mut self) {
@@ -52,11 +63,13 @@ impl Cpu {
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        let start = 0x8000;
-        let end = 0x8000 + program.len();
-
-        self.memory[start..end].copy_from_slice(&program);
-        self.mem_write_u16(0xFFFC, 0x8000); // reset vector -> program start
+        // The chapter-4 bus has no PRG-ROM at 0x8000 yet, so programs run from
+        // RAM at 0x0000. The reset vector at 0xFFFC isn't backed either; reading
+        // it returns 0, which is exactly the load address.
+        for (i, byte) in program.into_iter().enumerate() {
+            self.mem_write(i as u16, byte);
+        }
+        self.mem_write_u16(0xFFFC, 0x0000); // reset vector -> program start
     }
 
     pub fn run(&mut self) {
@@ -80,30 +93,6 @@ impl Cpu {
                 Flow::Continue => continue,
             }
         }
-    }
-
-    // Memory Helpers
-    pub fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    pub fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
-
-    pub fn mem_read_u16(&self, addr: u16) -> u16 {
-        let lo = self.mem_read(addr) as u16;
-        let hi = self.mem_read(addr.wrapping_add(1)) as u16;
-
-        (hi << 8) | lo
-    }
-
-    pub fn mem_write_u16(&mut self, addr: u16, data: u16) {
-        let lo = (data & 0xff) as u8;
-        let hi = (data >> 8) as u8;
-
-        self.mem_write(addr, lo);
-        self.mem_write(addr.wrapping_add(1), hi);
     }
 
     fn next_byte(&mut self) -> u8 {
