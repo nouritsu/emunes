@@ -63,13 +63,14 @@ impl Cpu {
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        // The chapter-4 bus has no PRG-ROM at 0x8000 yet, so programs run from
-        // RAM at 0x0000. The reset vector at 0xFFFC isn't backed either; reading
-        // it returns 0, which is exactly the load address.
+        self.load_at(program, 0x0000);
+    }
+
+    pub fn load_at(&mut self, program: Vec<u8>, start: u16) {
         for (i, byte) in program.into_iter().enumerate() {
-            self.mem_write(i as u16, byte);
+            self.mem_write(start + i as u16, byte);
         }
-        self.mem_write_u16(0xFFFC, 0x0000); // reset vector -> program start
+        self.mem_write_u16(0xFFFC, start);
     }
 
     pub fn run(&mut self) {

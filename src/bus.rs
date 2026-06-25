@@ -3,9 +3,13 @@ const RAM_END: u16 = 0x1FFF;
 const PPU_START: u16 = 0x2000;
 const PPU_END: u16 = 0x3FFF;
 
+const RESET_VECTOR_START: u16 = 0xFFFC;
+const RESET_VECTOR_END: u16 = 0xFFFD;
+
 #[derive(Debug)]
 pub struct Bus {
     cpu_vram: [u8; 2048],
+    reset_vector: u16,
 }
 
 pub trait Mem {
@@ -22,6 +26,7 @@ impl Default for Bus {
     fn default() -> Self {
         Self {
             cpu_vram: [0; 2048],
+            reset_vector: 0,
         }
     }
 }
@@ -37,6 +42,10 @@ impl Mem for Bus {
             PPU_START..=PPU_END => {
                 let _mirror_down_addr = addr & 0b00100000_00000111;
                 todo!("PPU is not implemented")
+            }
+
+            RESET_VECTOR_START..=RESET_VECTOR_END => {
+                self.reset_vector.to_le_bytes()[(addr - RESET_VECTOR_START) as usize]
             }
 
             _ => {
@@ -56,6 +65,12 @@ impl Mem for Bus {
             PPU_START..=PPU_END => {
                 let _mirror_down_addr = addr & 0b00100000_00000111;
                 todo!("PPU is not implemented")
+            }
+
+            RESET_VECTOR_START..=RESET_VECTOR_END => {
+                let mut bytes = self.reset_vector.to_le_bytes();
+                bytes[(addr - RESET_VECTOR_START) as usize] = data;
+                self.reset_vector = u16::from_le_bytes(bytes);
             }
 
             _ => {

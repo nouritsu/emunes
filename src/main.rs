@@ -42,7 +42,7 @@ fn main() {
         .unwrap();
 
     let mut cpu = Cpu::new();
-    cpu.load(game_code);
+    cpu.load_at(game_code, 0x0600);
     cpu.reset();
 
     let mut screen_state = [0u8; FRAME_LEN];
